@@ -19,72 +19,65 @@ from collections import namedtuple
 
 
 def annotation_to_h5(H, a, cell_width, cell_height, max_len):
-    region_size = H['region_size']
-    # assert H['region_size'] == H['image_height'] / H['grid_height']
-    # assert H['region_size'] == H['image_width'] / H['grid_width']
-    cell_regions = get_cell_grid(cell_width, cell_height, region_size)
+    pos_ranges = H['3d_pos_range']
+    dim_ranges = H['3d_dim_range']
+    cell_regions = init_dim_grid(cell_width, cell_height, pos_ranges, dim_ranges)
 
     cells_per_image = len(cell_regions)
 
     box_list = [[] for idx in range(cells_per_image)]
 
     for cidx, c in enumerate(cell_regions):
-        box_list[cidx] = [r for r in a.rects if all(r.intersection(c))]
+        for r in a.rects:
+            intersect = r.intersection(c)
+            if all(intersect):
+                box_list[cidx].append(r)
 
     boxes = np.zeros((1, cells_per_image, 6, max_len, 1), dtype=np.float)
     box_flags = np.zeros((1, cells_per_image, 1, max_len, 1), dtype=np.float)
 
     for cidx in xrange(cells_per_image):
         # assert(cur_num_boxes <= max_len)
-
-        cell_ox = 0.5 * (cell_regions[cidx].x1 + cell_regions[cidx].x2)
-        cell_oy = 0.5 * (cell_regions[cidx].y1 + cell_regions[cidx].y2)
+        cell_ox = cell_regions[cidx].x
+        cell_oy = cell_regions[cidx].y
 
         unsorted_boxes = []
         for bidx in xrange(min(len(box_list[cidx]), max_len)):
-
             # relative box position with respect to cell
-            ox = 0.5 * \
-                (box_list[cidx][bidx].x1 + box_list[cidx][bidx].x2) - cell_ox
-            oy = 0.5 * \
-                (box_list[cidx][bidx].y1 + box_list[cidx][bidx].y2) - cell_oy
-            oz = 0.5 * \
-                (box_list[cidx][bidx].z1 + box_list[cidx][bidx].z2)
-
-            width = abs(box_list[cidx][bidx].x2 - box_list[cidx][bidx].x1)
-            height = abs(box_list[cidx][bidx].y2 - box_list[cidx][bidx].y1)
-            depth = abs(box_list[cidx][bidx].z2 - box_list[cidx][bidx].z1)
-
-            if (abs(ox) < H['focus_size'] * region_size and abs(oy) < H['focus_size'] * region_size and
-                    width < H['biggest_box_px'] and height < H['biggest_box_px']):
-                unsorted_boxes.append(
-                    np.array([ox, oy, oz, width, height, depth], dtype=np.float))
+            ox, oy, ox = box_list[cidx][bidx].x, box_list[cidx][bidx].y, box_list[cidx][bidx].z
+            width, height, depth = box_list[cidx][bidx].w, box_list[cidx][bidx].h, box_list[cidx][bidx].d 
 
         for bidx, box in enumerate(sorted(unsorted_boxes, key=lambda x: x[0]**2 + x[1]**2)):
             boxes[0, cidx, :, bidx, 0] = box
-            box_flags[0, cidx, 0, bidx, 0] = max(
-                box_list[cidx][bidx].silhouetteID, 1)
+            box_flags[0, cidx, 0, bidx, 0] = max(box_list[cidx][bidx].silhouetteID, 1)
 
     return boxes, box_flags
 
-
-def get_cell_grid(cell_width, cell_height, region_size):
+def init_dim_grid(cell_width, cell_height, pos_ranges, dim_ranges):
+    xpos_min, xpos_max = pos_ranges[0]
+    ypos_min, ypos_max = pos_ranges[1]
+    zpos_min, zpos_max = pos_ranges[2]
+    xdim_min, xdim_max = dim_ranges[0]
+    ydim_min, ydim_max = dim_ranges[1]
+    zdim_min, zdim_max = dim_ranges[2]
 
     cell_regions = []
     for iy in xrange(cell_height):
         for ix in xrange(cell_width):
             cidx = iy * cell_width + ix
-            ox = (ix + 0.5) * region_size
-            oy = (iy + 0.5) * region_size
-
-            r = al.AnnoRect(ox - 0.5 * region_size, oy - 0.5 * region_size,
-                            ox + 0.5 * region_size, oy + 0.5 * region_size)
+            r = al.AnnoBox( 
+                x = (xpos_max - xpos_min) * np.random.random_sample() + xpos_min,
+                y = (ypos_max - ypos_min) * np.random.random_sample() + ypos_min,
+                z = (zpos_max - zpos_min) * np.random.random_sample() + zpos_min,
+                w = (xdim_max - xdim_min) * np.random.random_sample() + xdim_min,
+                h = (ydim_max - ydim_min) * np.random.random_sample() + ydim_min,
+                d = (zdim_max - zdim_min) * np.random.random_sample() + zdim_min
+            )
             r.track_id = cidx
 
             cell_regions.append(r)
 
     return cell_regions
-
 
 def annotation_jitter(I, a_in, min_box_width=20, jitter_scale_min=0.9, jitter_scale_max=1.1, jitter_offset=16, target_width=640, target_height=480):
     a = copy.deepcopy(a_in)

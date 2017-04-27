@@ -37,7 +37,7 @@ def _draw_rect(draw, rect, color):
     draw.line(rect_cords, fill=color, width=2)
 
 
-def compute_boxes(H, confidences, boxes, rnn_len=1, min_conf=0.1, tau=0.25):
+def compute_boxes(H, confidences, boxes, use_stitching=False, show_removed=True, rnn_len=1, min_conf=0.1, tau=0.25):
     num_cells = H["grid_height"] * H["grid_width"]
     boxes_r = np.reshape(boxes, (-1,
                                  H["grid_height"],
@@ -55,9 +55,9 @@ def compute_boxes(H, confidences, boxes, rnn_len=1, min_conf=0.1, tau=0.25):
         for y in range(H["grid_height"]):
             for x in range(H["grid_width"]):
                 bbox = boxes_r[0, y, x, n, :]
-                abs_cx = int(bbox[0]) + cell_pix_size/2 + cell_pix_size * x
-                abs_cy = int(bbox[1]) + cell_pix_size/2 + cell_pix_size * y
-                abs_cz = bbox[3]
+                abs_cx = bbox[0]
+                abs_cy = bbox[1]
+                abs_cz = bbox[2]
                 w = bbox[3]
                 h = bbox[4]
                 d = bbox[5]
@@ -65,27 +65,8 @@ def compute_boxes(H, confidences, boxes, rnn_len=1, min_conf=0.1, tau=0.25):
                 all_boxes[y][x].append(Box(abs_cx,abs_cy,abs_cz,w,h,d,conf))
 
     acc_boxes = [b for box in all_boxes for cell in box for b in cell]
-    
-    boxes = []
-    for box in acc_boxes:
-        if box.true_confidence<min_conf:
-            continue
-        b = al.AnnoBox()
-        b.x1 = box.cx - box.width/2.
-        b.x2 = box.cx + box.width/2.
-        b.y1 = box.cy - box.height/2.
-        b.y2 = box.cy + box.height/2.
-        b.z1 = box.cz - box.depth/2.
-        b.z2 = box.cz + box.depth/2.
-        b.score = box.true_confidence
-        boxes.append(b)
 
-    return boxes
-
-
-
-def add_rectangles(H, orig_image, confidences, boxes, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25,
-    color_removed=(0, 0, 255), color_acc=(0, 0, 255)):
+def add_boxes(H, orig_image, confidences, boxes, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25, color_removed=(0, 0, 255), color_acc=(0, 0, 255)):
     image = np.copy(orig_image[0])
     num_cells = H["grid_height"] * H["grid_width"]
     boxes_r = np.reshape(boxes, (-1,
@@ -99,49 +80,36 @@ def add_rectangles(H, orig_image, confidences, boxes, use_stitching=False, rnn_l
                                              rnn_len,
                                              H['num_classes']))
     cell_pix_size = H['region_size']
-    all_rects = [[[] for _ in range(H["grid_width"])] for _ in range(H["grid_height"])]
+    all_boxes = [[[] for _ in range(H["grid_width"])] for _ in range(H["grid_height"])]
     for n in range(rnn_len):
         for y in range(H["grid_height"]):
             for x in range(H["grid_width"]):
                 bbox = boxes_r[0, y, x, n, :]
-                abs_cx = int(bbox[0]) + cell_pix_size/2 + cell_pix_size * x
-                abs_cy = int(bbox[1]) + cell_pix_size/2 + cell_pix_size * y
-                w = bbox[2]
-                h = bbox[3]
+                abs_cx = bbox[0]
+                abs_cy = bbox[1]
+                abs_cz = bbox[2]
+                w = bbox[3]
+                h = bbox[4]
+                d = bbox[5]
                 conf = np.max(confidences_r[0, y, x, n, 1:])
-                all_rects[y][x].append(Rect(abs_cx,abs_cy,w,h,conf))
+                all_boxes[y][x].append(Box(abs_cx,abs_cy,abs_cz,w,h,d,conf))
 
-    all_rects_r = [r for row in all_rects for cell in row for r in cell]
-    if use_stitching:
-        from stitch_wrapper import stitch_rects
-        acc_rects = stitch_rects(all_rects, tau)
-    else:
-        acc_rects = all_rects_r
+    all_boxes_r = [r for row in all_boxes for cell in row for r in cell]
 
-    if not show_removed:
-        all_rects_r = []
-
-    pairs = [(all_rects_r, color_removed), (acc_rects, color_acc)]
     im = Image.fromarray(image.astype('uint8'))
-    draw = ImageDraw.Draw(im)
-    for rect_set, color in pairs:
-        for rect in rect_set:
-            if rect.confidence > min_conf:
-                _draw_rect(draw, rect, color)
-
     image = np.array(im).astype('float32')
 
-    rects = []
-    for rect in acc_rects:
-        r = al.AnnoRect()
-        r.x1 = rect.cx - rect.width/2.
-        r.x2 = rect.cx + rect.width/2.
-        r.y1 = rect.cy - rect.height/2.
-        r.y2 = rect.cy + rect.height/2.
-        r.score = rect.true_confidence
-        rects.append(r)
+    boxes = []
+    for box in all_boxes_r:
+        if box.true_confidence<min_conf:
+            continue
+        b = al.AnnoBox()
+        b.x, b.y, b.z = box.cx, box.cy, box.cz
+        b.w, b.h, b.d = box.width, box.height, box.depth
+        b.score = box.true_confidence
+        boxes.append(b)
 
-    return image, rects
+    return image, boxes
 
 def to_x1y1x2y2(box):
     w = tf.maximum(box[:, 2:3], 1)

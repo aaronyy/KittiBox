@@ -11,6 +11,7 @@ import os
 import numpy as np
 import scipy as scp
 import random
+import inspect
 
 from utils import train_utils
 from utils import data_utils
@@ -312,6 +313,8 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input):
 
 
 def loss(hypes, decoded_logits, labels):
+    #print('parent loss:', inspect.stack()[1][3])
+    
     """Calculate the loss from the logits and the labels.
 
     Args:
@@ -332,8 +335,8 @@ def loss(hypes, decoded_logits, labels):
     pred_logits = decoded_logits['pred_logits']
     pred_confidences = decoded_logits['pred_confidences']
 
-    pred_confs_deltas = decoded_logits['pred_confs_deltas']
-    pred_boxes_deltas = decoded_logits['pred_boxes_deltas']
+    pred_confs_deltas = decoded_logits['pred_confs_deltas'] if 'pred_confs_deltas' in decoded_logits else None
+    pred_boxes_deltas = decoded_logits['pred_boxes_deltas'] if 'pred_boxes_deltas' in decoded_logits else None 
 
     grid_size = hypes['grid_width'] * hypes['grid_height']
     outer_size = grid_size * hypes['batch_size']
@@ -352,7 +355,8 @@ def loss(hypes, decoded_logits, labels):
         logits=pred_classes, labels=true_classes)
 
     # ignore don't care areas
-    cross_entropy_sum = (tf.reduce_sum(mask_r*cross_entropy))
+    #cross_entropy_sum = (tf.reduce_sum(mask_r*cross_entropy))
+    cross_entropy_sum = (tf.reduce_sum(cross_entropy))
     confidences_loss = cross_entropy_sum / outer_size * head[0]
 
     true_boxes = tf.reshape(boxes, (outer_size, hypes['rnn_len'], 6))
@@ -362,9 +366,12 @@ def loss(hypes, decoded_logits, labels):
         tf.cast(tf.greater(confidences, 0), 'float32'), (outer_size, 1, 1))
 
     # danger zone
-    residual = (true_boxes - pred_boxes) * boxes_mask
+    #residual = (true_boxes - pred_boxes) * boxes_mask
+    residual = (true_boxes - pred_boxes)
 
     boxes_loss = tf.reduce_sum(tf.abs(residual)) / outer_size * head[1]
+
+    boxes_loss = tf.Print(boxes_loss, [boxes, true_boxes, pred_boxes, boxes_loss], message='> boxes_loss ')
 
     if hypes['use_rezoom']:
         # add rezoom loss

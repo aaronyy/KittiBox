@@ -45,26 +45,19 @@ def make_img_dir(hypes):
 
 def write_boxes(boxes, filename):
     with open(filename, 'w') as f:
-        for rect in rects:
-            string = "Car 0 1 0 0 0 0 0 %f %f %f %f %f %f 0 %f" % \
-                        ((rect.x2-rect.x1), (rect.y2-rect.y1), (rect.z2-rect.z1),
-                        (rect.x1+rect.x2)/2, (rect.y1+rect.y2)/2, (rect.z1+rect.z2)/2
-                        , rect.score)
+        for box in boxes:
+            # type, trunc, occ, orient, bbx, bby, bbxx, bbyy, width, height, depth, 3dx, 3dy, 3dz, roty
+            string = "Car 0 1 0 0 0 0 0 %.3f %.3f %.3f %.3f %.3f %.3f 0 %.3f" % (box.x, box.y, box.z, box.w, box.h, box.d, box.score)
             print(string, file=f)
 
-
 def evaluate(hypes, sess, image_pl, softmax):
-    pred_annolist = get_results(hypes, sess, image_pl, softmax, True)
+    pred_annolist, image_list, dt, dt2 = get_results(hypes, sess, image_pl, softmax, True)
 
     val_path = make_val_dir(hypes)
-
     eval_list = []
 
-    eval_cmd = os.path.join(hypes['dirs']['base_path'],
-                            hypes['data']['eval_cmd'])
-
-    label_dir = os.path.join(hypes['dirs']['data_dir'],
-                             hypes['data']['label_dir'])
+    eval_cmd = os.path.join(hypes['dirs']['base_path'], hypes['data']['eval_cmd'])
+    label_dir = os.path.join(hypes['dirs']['data_dir'], hypes['data']['label_dir'])
 
     try:
         subprocess.check_call([eval_cmd, val_path, label_dir])
@@ -107,9 +100,7 @@ def evaluate(hypes, sess, image_pl, softmax):
     eval_list.append(('Speed (msec)', 1000*dt))
     eval_list.append(('Speed (fps)', 1/dt))
     eval_list.append(('Post (msec)', 1000*dt2))
-
     return eval_list, image_list
-
 
 def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
 
@@ -119,15 +110,13 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
         pred_boxes = decoded_logits['pred_boxes']
     pred_confidences = decoded_logits['pred_confidences']
 
-    # Build Placeholder
+    # Build placeholder
     shape = [hypes['image_height'], hypes['image_width'], 3]
 
     if validation:
-        kitti_txt = os.path.join(hypes['dirs']['data_dir'],
-                                 hypes['data']['val_file'])
+        kitti_txt = os.path.join(hypes['dirs']['data_dir'], hypes['data']['val_file'])
     else:
-        kitti_txt = os.path.join(hypes['dirs']['data_dir'],
-                                 hypes['data']['train_file'])
+        kitti_txt = os.path.join(hypes['dirs']['data_dir'], hypes['data']['train_file'])
     # true_annolist = AnnLib.parse(test_idl)
 
     val_dir = make_val_dir(hypes, validation)
@@ -145,7 +134,7 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
         if not validation and random.random() > 0.2:
             continue
         image_file = os.path.join(base_path, image_file)
-        print(image_file)
+        #print(image_file)
         orig_img = scp.misc.imread(image_file)[:, :, :3]
         img = scp.misc.imresize(orig_img, (hypes["image_height"],
                                            hypes["image_width"]),
@@ -154,13 +143,15 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
         (np_pred_boxes, np_pred_confidences) = sess.run([pred_boxes,
                                                          pred_confidences],
                                                         feed_dict=feed)
+        #print('np_pred_boxes: %d' % len(np_pred_boxes))
+
         pred_anno = AnnLib.Annotation()
         pred_anno.imageName = image_file
-        boxes = utils.train_utils.compute_boxes(
-            hypes, np_pred_confidences,
+        new_img, boxes = utils.train_utils.add_boxes(
+            hypes, [img], np_pred_confidences,
             np_pred_boxes, show_removed=False,
             use_stitching=True, rnn_len=hypes['rnn_len'],
-            min_conf=0.50, tau=hypes['tau'], color_acc=(0, 255, 0))
+            min_conf=0.1, tau=hypes['tau'], color_acc=(0, 255, 0))
 
         if validation and i % 15 == 0:
             image_name = os.path.basename(pred_anno.imageName)
@@ -176,11 +167,27 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
         val_file = os.path.join(val_dir, val_file_name)
 
         # write rects to file
-
+        boxes = sorted(boxes, key=lambda x: x.score, reverse=True)
         pred_anno.boxes = boxes
-
-        #write_boxes(boxes, val_file)
+        
+        write_boxes(boxes, val_file)
 
         pred_annolist.append(pred_anno)
 
-    return pred_annolist
+    start_time = time.time()
+    for i in xrange(100):
+        (np_pred_boxes, np_pred_confidences) = sess.run([pred_boxes,
+                                                         pred_confidences],
+                                                        feed_dict=feed)
+    dt = (time.time() - start_time)/100
+
+    start_time = time.time()
+    for i in xrange(100):
+        utils.train_utils.compute_boxes(
+            hypes, np_pred_confidences,
+            np_pred_boxes, show_removed=False,
+            use_stitching=True, rnn_len=hypes['rnn_len'],
+            min_conf=0.001, tau=hypes['tau'])
+    dt2 = (time.time() - start_time)/100
+
+    return pred_annolist, image_list, dt, dt2

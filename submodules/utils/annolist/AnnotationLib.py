@@ -1,4 +1,5 @@
 import os
+import inspect
 
 from math import sqrt
 
@@ -366,8 +367,8 @@ class AnnoRect(object):
 			dWidth  = float(self.x2 - self.x1)
 			dHeight = float(self.y2 - self.y1)
 
-		xdist   = (self.x1 + self.x2 - other.x1 - other.x2) / dWidth
-		ydist   = (self.y1 + self.y2 - other.y1 - other.y2) / dHeight
+		xdist = (self.x1 + self.x2 - other.x1 - other.x2) / dWidth
+		ydist = (self.y1 + self.y2 - other.y1 - other.y2) / dHeight
 
 		return sqrt(xdist*xdist + ydist*ydist)
 
@@ -471,14 +472,13 @@ class AnnoRect(object):
 		node.appendChild(rect_el)
 
 class AnnoBox(object):
-	def __init__(self, x1=-1, y1=-1, z1=-1, x2=-1, y2=-1, z2 = -1):
-
-		self.x1 = x1
-		self.y1 = y1
-		self.z1 = z1
-		self.x2 = x2
-		self.y2 = y2
-		self.z2 = z2
+	def __init__(self, x=-1, y=-1, z=-1, w=-1, h=-1, d = -1):
+		self.x = x # center X 
+		self.y = y # center Y
+		self.z = z # center Z
+		self.w = w # width 
+		self.h = h # height 
+		self.d = d # depth 
 
 		self.score = -1.0
 		self.scale = -1.0
@@ -490,85 +490,67 @@ class AnnoBox(object):
 		self.classID = -1
 		self.track_id = -1
 
-		self.point = [];
-                self.at = {};
+		self.point = []
+		self.at = {}
 
 	def __str__(self):
-            return "<AnnoBox x1: {}, x2: {}, y1: {}, y2: {}, z1: {}, z2: {}, class: {}>".format(
-			self.x1, self.x2, self.y1, self.y2, self.z1, self.z2, self.classID)
-	
-        def __str__(self):
-            return "<AnnoBox x1: {}, x2: {}, y1: {}, y2: {}, z1: {}, z2: {}, class: {}>".format(
-			self.x1, self.x2, self.y1, self.y2, self.z1, self.z2, self.classID)
+		return "<AnnoBox x: {}, y: {}, z: {}, w: {}, h: {}, d: {}, class: {}>".format(
+		self.x, self.y, self.z, self.w, self.h, self.d, self.classID)
+
+	def __repr__(self):
+		return self.__str__()
 
 	def width(self):
-		return abs(self.x2-self.x1)
+		return self.w
 
 	def height(self):
-		return abs(self.y2-self.y1)
-	
-        def depth(self):
-		return abs(self.z2-self.z1)
+		return self.h
+
+	def depth(self):
+		return self.d
 
 	def centerX(self):
-		return (self.x1+self.x2)/2.0
+		return self.x
 
 	def centerY(self):
-		return (self.y1+self.y2)/2.0
-	
-        def centerZ(self):
-		return (self.z1+self.z2)/2.0
+		return self.y
+
+	def centerZ(self):
+		return self.z
 
 	def left(self):
-		return min(self.x1, self.x2)
+		return self.x - self.w / 2.
 
 	def right(self):
-		return max(self.x1, self.x2)
+		return self.x + self.w / 2.
 
 	def top(self):
-		return min(self.y1, self.y2)
+		return self.y - self.h / 2.
 
 	def bottom(self):
-		return max(self.y1, self.y2)
-        
-        def end(self):
-		return min(self.z1, self.z2)
-	
-        def start(self):
-		return max(self.z1, self.z2)
+		return self.y + self.h / 2.
+
+	def start(self):
+		return self.z - self.d / 2.
+
+	def end(self):
+		return self.z + self.d / 2.
 
 	def forceAspectRatio(self, ratio, KeepHeight = False, KeepWidth = False):
-		"""force the Aspect ratio"""
-		if KeepWidth or ((not KeepHeight) and self.width() * 1.0 / self.height() > ratio):
-			# extend height
-			newHeight = self.width() * 1.0 / ratio
-			self.y1 = (self.centerY() - newHeight / 2.0)
-			self.y2 = (self.y1 + newHeight)
-		else:
-			# extend width
-			newWidth = self.height() * ratio
-			self.x1 = (self.centerX() - newWidth / 2.0)
-			self.x2 = (self.x1 + newWidth)
+		pass
 			
 	def clipToImage(self, min_x, max_x, min_y, max_y):
-			self.x1 = max(min_x, self.x1)
-			self.x2 = max(min_x, self.x2)
-			self.y1 = max(min_y, self.y1)
-			self.y2 = max(min_y, self.y2)
-			self.x1 = min(max_x, self.x1)
-			self.x2 = min(max_x, self.x2)
-			self.y1 = min(max_y, self.y1)
-			self.y2 = min(max_y, self.y2)
+		pass 
 
 	def printContent(self):
-		print "Coords: ", self.x1, self.y1, self.z1, self.x2, self.y2, self.z2
+		print "Coords: ", self.x, self.y, self.z, self.w, self.h, self.d
 		print "Score: ", self.score
 		print "Articulations: ", self.articulations
 		print "Viewpoints: ", self.viewpoints
 		print "Silhouette: ", self.silhouetteID
 
 	def ascii(self):
-		r = "("+str(self.x1)+", "+str(self.y1)+", "+str(self.z1)+", "+str(self.x2)+", "+str(self.y2)+", "+str(self.z2)+")"
+		r = "("+str(self.x)+", "+str(self.y)+", "+str(self.z)+", "+str(self.w)+", "+str(self.h)+", "+str(self.d)+")"
 		if (self.score!=-1):
 			r = r + ":"+str(self.score)
 		if (self.silhouetteID !=-1):
@@ -576,81 +558,43 @@ class AnnoBox(object):
 		return r
 
 	def writeIDL(self, file):
-		file.write(" ("+str(self.x1)+", "+str(self.y1)+", "+", "+str(self.z1)+", "+str(self.x2)+", "+str(self.y2)+", "+str(self.z2)+")")
+		file.write(" ("+str(self.x)+", "+str(self.y)+", "+str(self.z)+", "+str(self.w)+", "+str(self.h)+", "+str(self.d)+")")
 		if (self.score!=-1):
 			file.write(":"+str(self.score))
 		if (self.silhouetteID !=-1):
 			file.write("/"+str(self.silhouetteID))
 
 	def sortCoords(self):
-		if (self.x1>self.x2):
-			self.x1, self.x2 = self.x2, self.x1
-		if (self.y1>self.y2):
-			self.y1, self.y2 = self.y2, self.y1
-		if (self.z1>self.z2):
-			self.z1, self.z2 = self.z2, self.z1
+		pass
 
 	def rescale(self, factor):
-		self.x1=(self.x1*float(factor))
-		self.y1=(self.y1*float(factor))
-		self.z1=(self.z1*float(factor))
-		self.x2=(self.x2*float(factor))
-		self.y2=(self.y2*float(factor))
-		self.z2=(self.z2*float(factor))
+		pass
 
 	def resize(self, factor, factor_y = None, factor_z = None):
-		w = self.width()
-		h = self.height()
-		d = self.depth()
-		if factor_y is None:
-			factor_y = factor
-		if factor_z is None:
-			factor_z = factor
-		centerX = float(self.x1+self.x2)/2.0
-		centerY = float(self.y1+self.y2)/2.0
-		centerZ = float(self.z1+self.z2)/2.0
-		self.x1 = (centerX - (w/2.0)*factor)
-		self.y1 = (centerY - (h/2.0)*factor_y)
-		self.z1 = (centerZ - (d/2.0)*factor_z)
-		self.x2 = (centerX + (w/2.0)*factor)
-		self.y2 = (centerY + (h/2.0)*factor_y)
-		self.z2 = (centerZ + (d/2.0)*factor_z)
-		
+		pass 
 
 	def intersection(self, other):
-                if isinstance(other, AnnoBox):
-                    if(self.z1 >= other.z2):
-                            return (0, 0)	
-                    if(self.z2 <= other.z1):
-                            return (0, 0)
-		self.sortCoords()
-		other.sortCoords()
-		
-		if(self.x1 >= other.x2):
-			return (0, 0)		
-		if(self.x2 <= other.x1):
-			return (0, 0)
-		if(self.y1 >= other.y2):
-			return (0, 0)	
-		if(self.y2 <= other.y1):
-			return (0, 0)
-		
-		l = max(self.x1, other.x1);
-		t = max(self.y1, other.y1);
-		r = min(self.x2, other.x2);
-                b = min(self.y2, other.y2);
-                if isinstance(other, AnnoBox):
-                    s = max(self.z1, other.z1);
-                    e = min(self.z2, other.z2);
-                    return (r - l, b - t, e - s)
-                return (r - l, b - t)
-		
-		#Alternate implementation
-		#nWidth  = self.x2 - self.x1
-		#nHeight = self.y2 - self.y1
-		#iWidth  = max(0,min(max(0,other.x2-self.x1),nWidth )-max(0,other.x1-self.x1))
-		#iHeight = max(0,min(max(0,other.y2-self.y1),nHeight)-max(0,other.y1-self.y1))
-		#return (iWidth, iHeight)
+		if not isinstance(other, AnnoBox):
+			print "ERROR: AnnoBox not being compared against another AnnoBox, something went wrong... %s" % str(type(other))
+			exit()
+
+		if (self.left() < other.right() and self.right() > other.left() and 
+			self.top() < other.bottom() and self.bottom() > other.top() and
+			self.start() < other.end() and self.end() > other.start()):
+
+			l = max(self.left(), other.left())
+			t = max(self.top(), other.top())
+			s = max(self.start(), other.start())
+			r = min(self.right(), other.right())
+			b = min(self.bottom(), other.bottom())
+			e = min(self.end(), other.end())
+			#print "[1] left:%.2f right:%.2f w:%.2f top:%.2f bot:%.2f h:%.2f" % (self.left(), self.right(), self.w, self.top(), self.bottom(), self.h)
+			#print "[2] left:%.2f right:%.2f w:%.2f top:%.2f bot:%.2f h:%.2f" % (other.left(), other.right(), other.w, other.top(), other.bottom(), other.h)
+			#print "[R] left:%.2f right:%.2f top:%.2f bot:%.2f" % (l, r, t, b)
+			#print "returning %s" % str((r - l, b - t, e - s))
+			return (r - l, b - t, e - s)
+		else:
+			return (0, 0, 0)
 
 	def cover(self, other):
 		nWidth = self.width()
@@ -660,17 +604,14 @@ class AnnoBox(object):
 		return float(iWidth * iHeight * iDepth) / float(nWidth * nHeight * nDepth)
 
 	def overlap_pascal(self, other):
-		self.sortCoords()
-		other.sortCoords()
-
-		nWidth  = self.x2 - self.x1
-		nHeight = self.y2 - self.y1
-		nDepth = self.z2 - self.z1
+		# intersection over union  
 		iWidth, iHeight, iDepth = self.intersection(other)
-		interSection = iWidth * iHeight * iDepth
-			
-		union = self.width() * self.height() * self.depth() + other.width() * other.height() * self.depth() - interSection
-			
+		interArea = iWidth * iHeight * iDepth
+		
+		selfArea = self.width() * self.height() * self.depth()
+		otherArea = other.width() * other.height() * other.depth()
+		union = selfArea + otherArea - interArea
+		
 		overlap = interSection * 1.0 / union
 		return overlap
 
@@ -682,33 +623,15 @@ class AnnoBox(object):
 			return 0
 
 	def distance(self, other, aspectRatio=-1, fixWH='fixheight'):
-		if (aspectRatio!=-1):
-			if (fixWH=='fixwidth'):
-				dWidth  = float(self.x2 - self.x1)
-				dHeight = dWidth / aspectRatio
-			elif (fixWH=='fixheight'):
-				dHeight = float(self.y2 - self.y1)
-				dWidth  = dHeight * aspectRatio
-		else:
-			dWidth  = float(self.x2 - self.x1)
-			dHeight = float(self.y2 - self.y1)
-			dDepth = float(self.z2 - self.z1)
-
-		xdist   = (self.x1 + self.x2 - other.x1 - other.x2) / dWidth
-		ydist   = (self.y1 + self.y2 - other.y1 - other.y2) / dHeight
-		zdist   = (self.z1 + self.z2 - other.z1 - other.z2) / dDepth
-
-		return sqrt(xdist*xdist + ydist*ydist)
+		x = (self.x - other.x)
+		y = (self.y - other.y) 
+		z = (self.z - other.z)
+		return sqrt(x * x + y * y + z * z)
 
 	def isMatchingStd(self, other, coverThresh, overlapThresh, distThresh, aspectRatio=-1, fixWH=-1):
 		cover = other.cover(self)
 		overlap = self.cover(other)
 		dist = self.distance(other, aspectRatio, fixWH)
-
-		#if(self.width() == 24 ):
-		#print cover, " ", overlap, " ", dist
-		#print coverThresh, overlapThresh, distThresh
-		#print (cover>=coverThresh and overlap>=overlapThresh and dist<=distThresh)
 		
 		if (cover>=coverThresh and overlap>=overlapThresh and dist<=distThresh and self.classID == other.classID):
 			return 1
@@ -723,86 +646,8 @@ class AnnoBox(object):
 		if (style == 1):
 			return self.isMatchingPascal(other, minOverlap)
 
-	def addToXML(self, node, doc): # no Silhouette yet
-		rect_el = doc.createElement("annorect")
-		for item in "x1 y1 x2 y2 score scale track_id".split():
-			coord_el = doc.createElement(item)
-			coord_val = doc.createTextNode(str(self.__getattribute__(item)))
-			coord_el.appendChild(coord_val)
-			rect_el.appendChild(coord_el)
-			
-		articulation_el = doc.createElement("articulation")
-		for articulation in self.articulations:
-			id_el = doc.createElement("id")
-			id_val = doc.createTextNode(str(articulation))
-			id_el.appendChild(id_val)
-			articulation_el.appendChild(id_el)
-		if(len(self.articulations) > 0):
-			rect_el.appendChild(articulation_el)
-			
-		viewpoint_el    = doc.createElement("viewpoint")
-		for viewpoint in self.viewpoints:
-			id_el = doc.createElement("id")
-			id_val = doc.createTextNode(str(viewpoint))
-			id_el.appendChild(id_val)
-			viewpoint_el.appendChild(id_el)
-		if(len(self.viewpoints) > 0):
-			rect_el.appendChild(viewpoint_el)
-		
-		d3_el    = doc.createElement("D3")					
-		for d in self.d3:
-			id_el = doc.createElement("id")
-			id_val = doc.createTextNode(str(d))
-			id_el.appendChild(id_val)
-			d3_el.appendChild(id_el)
-		if(len(self.d3) > 0):
-			rect_el.appendChild(d3_el)
-					
-		if self.silhouetteID != -1:
-			silhouette_el    = doc.createElement("silhouette")
-			id_el = doc.createElement("id")
-			id_val = doc.createTextNode(str(self.silhouetteID))
-			id_el.appendChild(id_val)
-			silhouette_el.appendChild(id_el)
-			rect_el.appendChild(silhouette_el)
-
-		if self.classID != -1:
-			class_el    = doc.createElement("classID")
-			class_val = doc.createTextNode(str(self.classID))
-			class_el.appendChild(class_val)
-			rect_el.appendChild(class_el)
-
-		if len(self.point) > 0:
-			annopoints_el = doc.createElement("annopoints")
-
-			for p in self.point:
-				point_el = doc.createElement("point");
-				
-				point_id_el = doc.createElement("id");
-				point_id_val = doc.createTextNode(str(p.id));
-				point_id_el.appendChild(point_id_val);
-				point_el.appendChild(point_id_el);
-
-				point_x_el = doc.createElement("x");
-				point_x_val = doc.createTextNode(str(p.x));
-				point_x_el.appendChild(point_x_val);
-				point_el.appendChild(point_x_el);
-
-				point_y_el = doc.createElement("y");
-				point_y_val = doc.createTextNode(str(p.y));
-				point_y_el.appendChild(point_y_val);
-				point_el.appendChild(point_y_el);
-				
-                                point_z_el = doc.createElement("z");
-				point_z_val = doc.createTextNode(str(p.z));
-				point_z_el.appendChild(point_z_val);
-				point_el.appendChild(point_z_el);
-
-				annopoints_el.appendChild(point_el);
-			
-			rect_el.appendChild(annopoints_el);
-			
-		node.appendChild(rect_el)
+	def addToXML(self, node, doc): 
+		pass
 
 
 class Annotation(object):

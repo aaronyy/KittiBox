@@ -50,29 +50,27 @@ def read_kitti_anno(label_file, detect_truck):
             class_id = -1
         else:
             class_id = 1
-        x_s=float(label[8])
-        y_s=float(label[9])
-        z_s=float(label[10])
-        if x_s<0 or y_s<0 or z_s<0:
+        x_dim=float(label[8])
+        y_dim=float(label[9])
+        z_dim=float(label[10])
+        
+        x_pos=float(label[11])
+        y_pos=float(label[12])
+        z_pos=float(label[13])
+
+        if x_dim<0 or y_dim<0 or z_dim<0:
             continue
-        x_p=float(label[11])
-        y_p=float(label[12])
-        z_p=float(label[13])
-        object_rect = AnnoLib.AnnoBox(
-            x1=x_p-x_s/2, y1=y_p-y_s/2, z1=z_p-z_s/2,
-            x2=x_p+x_s/2, y2=y_p+y_s/2, z2=z_p+z_s/2)
-        assert object_rect.x1 < object_rect.x2
-        assert object_rect.y1 < object_rect.y2
+
+        object_rect = AnnoLib.AnnoBox(x=x_pos, y=y_pos, z=z_pos, w=x_dim, h=y_dim, d=z_dim)
         object_rect.classID = class_id
         box_list.append(object_rect)
 
     return box_list
 
-
 def _rescale_boxes(current_shape, anno, target_height, target_width):
-    x_scale = target_width / float(current_shape[1])
-    y_scale = target_height / float(current_shape[0])
     for r in anno.rects:
+        if isinstance(r, AnnoLib.AnnoBox): 
+            continue
         assert r.x1 < r.x2
         r.x1 *= x_scale
         r.x2 *= x_scale
@@ -83,7 +81,6 @@ def _rescale_boxes(current_shape, anno, target_height, target_width):
 
 
 def _generate_mask(hypes, ignore_rects):
-
     width = hypes["image_width"]
     height = hypes["image_height"]
     grid_width = hypes["grid_width"]
@@ -287,7 +284,6 @@ def test_new_kitti():
                 print('same')
             else:
                 print('diff')
-
 
 def inputs(hypes, q, phase):
 

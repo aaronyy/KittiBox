@@ -28,7 +28,6 @@ import threading
 from collections import namedtuple
 fake_anno = namedtuple('fake_anno_object', ['rects'])
 
-
 def read_kitti_anno(label_file, detect_truck):
     """ Reads a kitti annotation file.
 
@@ -39,7 +38,7 @@ def read_kitti_anno(label_file, detect_truck):
       Lists of rectangels: Cars and don't care area.
     """
     labels = [line.rstrip().split(' ') for line in open(label_file)]
-    rect_list = []
+    box_list = []
     for label in labels:
         if not (label[0] == 'Car' or label[0] == 'Van' or
                 label[0] == 'Truck' or label[0] == 'DontCare'):
@@ -51,15 +50,23 @@ def read_kitti_anno(label_file, detect_truck):
             class_id = -1
         else:
             class_id = 1
-        object_rect = AnnoLib.AnnoRect(
-            x1=float(label[4]), y1=float(label[5]),
-            x2=float(label[6]), y2=float(label[7]))
+        x_s=float(label[8])
+        y_s=float(label[9])
+        z_s=float(label[10])
+        if x_s<0 or y_s<0 or z_s<0:
+            continue
+        x_p=float(label[11])
+        y_p=float(label[12])
+        z_p=float(label[13])
+        object_rect = AnnoLib.AnnoBox(
+            x1=x_p-x_s/2, y1=y_p-y_s/2, z1=z_p-z_s/2,
+            x2=x_p+x_s/2, y2=y_p+y_s/2, z2=z_p+z_s/2)
         assert object_rect.x1 < object_rect.x2
         assert object_rect.y1 < object_rect.y2
         object_rect.classID = class_id
-        rect_list.append(object_rect)
+        box_list.append(object_rect)
 
-    return rect_list
+    return box_list
 
 
 def _rescale_boxes(current_shape, anno, target_height, target_width):
@@ -121,11 +128,11 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             assert os.path.exists(gt_image_file), \
                 "File does not exist: %s" % gt_image_file
 
-            rect_list = read_kitti_anno(gt_image_file,
+            box_list = read_kitti_anno(gt_image_file,
                                         detect_truck=hypes['detect_truck'])
 
             anno = AnnoLib.Annotation()
-            anno.rects = rect_list
+            anno.rects = box_list
 
             im = scp.misc.imread(image_file)
             if im.shape[2] == 4:
@@ -143,12 +150,12 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
                 jitter_scale_min = 0.9
                 jitter_scale_max = 1.1
                 jitter_offset = 16
-                im, anno = annotation_jitter(
+                '''im, anno = annotation_jitter(
                     im, anno, target_width=hypes["image_width"],
                     target_height=hypes["image_height"],
                     jitter_scale_min=jitter_scale_min,
                     jitter_scale_max=jitter_scale_max,
-                    jitter_offset=jitter_offset)
+                    jitter_offset=jitter_offset)'''
 
             pos_list = [rect for rect in anno.rects if rect.classID == 1]
             pos_anno = fake_anno(pos_list)
@@ -163,9 +170,8 @@ def _load_kitti_txt(kitti_txt, hypes, jitter=False, random_shuffel=True):
             mask = _generate_mask(hypes, mask_list)
 
             boxes = boxes.reshape([hypes["grid_height"],
-                                   hypes["grid_width"], 4])
+                                   hypes["grid_width"], 6])
             confs = confs.reshape(hypes["grid_height"], hypes["grid_width"])
-
             yield {"image": im, "boxes": boxes, "confs": confs,
                    "rects": pos_list, "mask": mask}
 
@@ -183,7 +189,7 @@ def create_queues(hypes, phase):
     grid_size = hypes['grid_width'] * hypes['grid_height']
     shapes = ([hypes['image_height'], hypes['image_width'], 3],
               [hypes['grid_height'], hypes['grid_width']],
-              [hypes['grid_height'], hypes['grid_width'], 4],
+              [hypes['grid_height'], hypes['grid_width'], 6],
               [hypes['grid_height'], hypes['grid_width']])
     capacity = 30
     q = tf.FIFOQueue(capacity=capacity, dtypes=dtypes, shapes=shapes)

@@ -8,9 +8,9 @@ import tensorflow as tf
 
 from PIL import Image, ImageDraw
 
-from utils.data_utils import (annotation_jitter, annotation_to_h5)
+from data_utils import (annotation_jitter, annotation_to_h5)
 from utils.annolist import AnnotationLib as al
-from utils.rect import Rect
+from rect import Rect, Box
 
 
 def rescale_boxes(current_shape, anno, target_height, target_width):
@@ -37,13 +37,62 @@ def _draw_rect(draw, rect, color):
     draw.line(rect_cords, fill=color, width=2)
 
 
-def compute_rectangels(H, confidences, boxes, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25):
+def compute_boxes(H, confidences, boxes, rnn_len=1, min_conf=0.1, tau=0.25):
     num_cells = H["grid_height"] * H["grid_width"]
     boxes_r = np.reshape(boxes, (-1,
                                  H["grid_height"],
                                  H["grid_width"],
                                  rnn_len,
-                                 4))
+                                 6))
+    confidences_r = np.reshape(confidences, (-1,
+                                             H["grid_height"],
+                                             H["grid_width"],
+                                             rnn_len,
+                                             H['num_classes']))
+    cell_pix_size = H['region_size']
+    all_boxes = [[[] for _ in range(H["grid_width"])] for _ in range(H["grid_height"])]
+    for n in range(rnn_len):
+        for y in range(H["grid_height"]):
+            for x in range(H["grid_width"]):
+                bbox = boxes_r[0, y, x, n, :]
+                abs_cx = int(bbox[0]) + cell_pix_size/2 + cell_pix_size * x
+                abs_cy = int(bbox[1]) + cell_pix_size/2 + cell_pix_size * y
+                abs_cz = bbox[3]
+                w = bbox[3]
+                h = bbox[4]
+                d = bbox[5]
+                conf = np.max(confidences_r[0, y, x, n, 1:])
+                all_boxes[y][x].append(Box(abs_cx,abs_cy,abs_cz,w,h,d,conf))
+
+    acc_boxes = [b for box in all_boxes for cell in box for b in cell]
+    
+    boxes = []
+    for box in acc_boxes:
+        if box.true_confidence<min_conf:
+            continue
+        b = al.AnnoBox()
+        b.x1 = box.cx - box.width/2.
+        b.x2 = box.cx + box.width/2.
+        b.y1 = box.cy - box.height/2.
+        b.y2 = box.cy + box.height/2.
+        b.z1 = box.cz - box.depth/2.
+        b.z2 = box.cz + box.depth/2.
+        b.score = box.true_confidence
+        boxes.append(b)
+
+    return boxes
+
+
+
+def add_rectangles(H, orig_image, confidences, boxes, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25,
+    color_removed=(0, 0, 255), color_acc=(0, 0, 255)):
+    image = np.copy(orig_image[0])
+    num_cells = H["grid_height"] * H["grid_width"]
+    boxes_r = np.reshape(boxes, (-1,
+                                 H["grid_height"],
+                                 H["grid_width"],
+                                 rnn_len,
+                                 6))
     confidences_r = np.reshape(confidences, (-1,
                                              H["grid_height"],
                                              H["grid_width"],
@@ -65,42 +114,6 @@ def compute_rectangels(H, confidences, boxes, use_stitching=False, rnn_len=1, mi
     all_rects_r = [r for row in all_rects for cell in row for r in cell]
     if use_stitching:
         from stitch_wrapper import stitch_rects
-        acc_rects = stitch_rects(all_rects, tau)
-    else:
-        acc_rects = all_rects_r
-
-
-
-def add_rectangles(H, orig_image, confidences, boxes, use_stitching=False, rnn_len=1, min_conf=0.1, show_removed=True, tau=0.25,
-    color_removed=(0, 0, 255), color_acc=(0, 0, 255)):
-    image = np.copy(orig_image[0])
-    num_cells = H["grid_height"] * H["grid_width"]
-    boxes_r = np.reshape(boxes, (-1,
-                                 H["grid_height"],
-                                 H["grid_width"],
-                                 rnn_len,
-                                 4))
-    confidences_r = np.reshape(confidences, (-1,
-                                             H["grid_height"],
-                                             H["grid_width"],
-                                             rnn_len,
-                                             H['num_classes']))
-    cell_pix_size = H['region_size']
-    all_rects = [[[] for _ in range(H["grid_width"])] for _ in range(H["grid_height"])]
-    for n in range(rnn_len):
-        for y in range(H["grid_height"]):
-            for x in range(H["grid_width"]):
-                bbox = boxes_r[0, y, x, n, :]
-                abs_cx = int(bbox[0]) + cell_pix_size/2 + cell_pix_size * x
-                abs_cy = int(bbox[1]) + cell_pix_size/2 + cell_pix_size * y
-                w = bbox[2]
-                h = bbox[3]
-                conf = np.max(confidences_r[0, y, x, n, 1:])
-                all_rects[y][x].append(Rect(abs_cx,abs_cy,w,h,conf))
-
-    all_rects_r = [r for row in all_rects for cell in row for r in cell]
-    if use_stitching:
-        from utils.stitch_wrapper import stitch_rects
         acc_rects = stitch_rects(all_rects, tau)
     else:
         acc_rects = all_rects_r
@@ -144,10 +157,10 @@ def intersection(box1, box2):
     y1_max = tf.maximum(box1[:, 1], box2[:, 1])
     x2_min = tf.minimum(box1[:, 2], box2[:, 2])
     y2_min = tf.minimum(box1[:, 3], box2[:, 3])
-
+   
     x_diff = tf.maximum(x2_min - x1_max, 0)
     y_diff = tf.maximum(y2_min - y1_max, 0)
-
+    
     return x_diff * y_diff
 
 def area(box):
@@ -174,7 +187,7 @@ def interp(w, i, channel_dim):
         w: A 4D block tensor of shape (n, h, w, c)
         i: A list of 3-tuples [(x_1, y_1, z_1), (x_2, y_2, z_2), ...],
             each having type (int, float, float)
-
+ 
         The 4D block represents a batch of 3D image feature volumes with c channels.
         The input i is a list of points  to index into w via interpolation. Direct
         indexing is not possible due to y_1 and z_1 being float values.
@@ -197,15 +210,15 @@ def interp(w, i, channel_dim):
     upper_r_idx = to_idx(upper_r, tf.shape(w))
     lower_l_idx = to_idx(lower_l, tf.shape(w))
     lower_r_idx = to_idx(lower_r, tf.shape(w))
-
+ 
     upper_l_value = tf.gather(w_as_vector, upper_l_idx)
     upper_r_value = tf.gather(w_as_vector, upper_r_idx)
     lower_l_value = tf.gather(w_as_vector, lower_l_idx)
     lower_r_value = tf.gather(w_as_vector, lower_r_idx)
-
+ 
     alpha_lr = tf.expand_dims(i[:, 2] - tf.floor(i[:, 2]), 1)
     alpha_ud = tf.expand_dims(i[:, 1] - tf.floor(i[:, 1]), 1)
-
+ 
     upper_value = (1 - alpha_lr) * upper_l_value + (alpha_lr) * upper_r_value
     lower_value = (1 - alpha_lr) * lower_l_value + (alpha_lr) * lower_r_value
     value = (1 - alpha_ud) * upper_value + (alpha_ud) * lower_value
@@ -236,7 +249,7 @@ def bilinear_select(H, pred_boxes, early_feat, early_feat_channels, w_offset, h_
     x_offsets = tf.constant(x_offsets)
     y_offsets = tf.constant(y_offsets)
 
-    pred_boxes_r = tf.reshape(pred_boxes, [outer_size * H['rnn_len'], 4])
+    pred_boxes_r = tf.reshape(pred_boxes, [outer_size * H['rnn_len'], 6])
     scale_factor = coarse_stride / fine_stride # scale difference between 15x20 and 60x80 features
 
     pred_x_center = (pred_boxes_r[:, 0:1] + w_offset * pred_boxes_r[:, 2:3] + x_offsets) / fine_stride
@@ -247,6 +260,7 @@ def bilinear_select(H, pred_boxes, early_feat, early_feat_channels, w_offset, h_
     pred_y_center_clip = tf.clip_by_value(pred_y_center,
                                           0,
                                           scale_factor * H['grid_height'] - 1)
+    pred_z_center = (pred_boxes_r[:, 1:2] + h_offset * pred_boxes_r[:, 5:6]) / fine_stride
 
-    interp_indices = tf.concat(axis=1, values=[tf.to_float(batch_ids), pred_y_center_clip, pred_x_center_clip])
+    interp_indices = tf.concat(axis=1, values=[tf.to_float(batch_ids), pred_z_center, pred_y_center_clip, pred_x_center_clip])
     return interp_indices

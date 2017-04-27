@@ -8,7 +8,7 @@ import sys
 import argparse
 import numpy as np
 import copy
-import utils.annolist.AnnotationLib as al
+import annolist.AnnotationLib as al
 
 import scipy as scp
 import scipy.misc
@@ -31,7 +31,7 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
     for cidx, c in enumerate(cell_regions):
         box_list[cidx] = [r for r in a.rects if all(r.intersection(c))]
 
-    boxes = np.zeros((1, cells_per_image, 4, max_len, 1), dtype=np.float)
+    boxes = np.zeros((1, cells_per_image, 6, max_len, 1), dtype=np.float)
     box_flags = np.zeros((1, cells_per_image, 1, max_len, 1), dtype=np.float)
 
     for cidx in xrange(cells_per_image):
@@ -48,14 +48,17 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
                 (box_list[cidx][bidx].x1 + box_list[cidx][bidx].x2) - cell_ox
             oy = 0.5 * \
                 (box_list[cidx][bidx].y1 + box_list[cidx][bidx].y2) - cell_oy
+            oz = 0.5 * \
+                (box_list[cidx][bidx].z1 + box_list[cidx][bidx].z2)
 
             width = abs(box_list[cidx][bidx].x2 - box_list[cidx][bidx].x1)
             height = abs(box_list[cidx][bidx].y2 - box_list[cidx][bidx].y1)
+            depth = abs(box_list[cidx][bidx].z2 - box_list[cidx][bidx].z1)
 
             if (abs(ox) < H['focus_size'] * region_size and abs(oy) < H['focus_size'] * region_size and
                     width < H['biggest_box_px'] and height < H['biggest_box_px']):
                 unsorted_boxes.append(
-                    np.array([ox, oy, width, height], dtype=np.float))
+                    np.array([ox, oy, oz, width, height, depth], dtype=np.float))
 
         for bidx, box in enumerate(sorted(unsorted_boxes, key=lambda x: x[0]**2 + x[1]**2)):
             boxes[0, cidx, :, bidx, 0] = box

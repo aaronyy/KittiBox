@@ -37,31 +37,31 @@ def _rezoom(hyp, pred_boxes, early_feat, early_feat_channels,
 
     Where each letter indexes into the feature map with bilinear interpolation
     '''
-    with tf.name_scope('rezoom'):
-        grid_size = hyp['grid_width'] * hyp['grid_height']
-        outer_size = grid_size * hyp['batch_size']
-        indices = []
-        for w_offset in w_offsets:
-            for h_offset in h_offsets:
-                indices.append(train_utils.bilinear_select(hyp,
-                                                           pred_boxes,
-                                                           early_feat,
-                                                           early_feat_channels,
-                                                           w_offset, h_offset))
-        interp_indices = tf.concat(axis=0, values=indices)
-        rezoom_features = train_utils.interp(early_feat,
-                                             interp_indices,
-                                             early_feat_channels)
-        rezoom_features_r = tf.reshape(rezoom_features,
-                                       [len(w_offsets) * len(h_offsets),
-                                        outer_size,
-                                        hyp['rnn_len'],
-                                        early_feat_channels])
-        rezoom_features_t = tf.transpose(rezoom_features_r, [1, 2, 0, 3])
-        return tf.reshape(rezoom_features_t,
-                          [outer_size,
-                           hyp['rnn_len'],
-                           len(w_offsets) * len(h_offsets) * early_feat_channels])
+
+    grid_size = hyp['grid_width'] * hyp['grid_height']
+    outer_size = grid_size * hyp['batch_size']
+    indices = []
+    for w_offset in w_offsets:
+        for h_offset in h_offsets:
+            indices.append(train_utils.bilinear_select(hyp,
+                                                       pred_boxes,
+                                                       early_feat,
+                                                       early_feat_channels,
+                                                       w_offset, h_offset))
+    interp_indices = tf.concat(axis=0, values=indices)
+    rezoom_features = train_utils.interp(early_feat,
+                                         interp_indices,
+                                         early_feat_channels)
+    rezoom_features_r = tf.reshape(rezoom_features,
+                                   [len(w_offsets) * len(h_offsets),
+                                    outer_size,
+                                    hyp['rnn_len'],
+                                    early_feat_channels])
+    rezoom_features_t = tf.transpose(rezoom_features_r, [1, 2, 0, 3])
+    return tf.reshape(rezoom_features_t,
+                      [outer_size,
+                       hyp['rnn_len'],
+                       len(w_offsets) * len(h_offsets) * early_feat_channels])
 
 
 def _build_inner_layer(hyp, encoded_features, train):
@@ -93,7 +93,7 @@ def _build_inner_layer(hyp, encoded_features, train):
 
     if train:
         # Adding dropout during training
-        output = tf.nn.dropout(output, 0.5)
+            output = tf.nn.dropout(output, 0.5)
     return output
 
 
@@ -109,13 +109,13 @@ def _build_output_layer(hyp, hidden_output):
     outer_size = grid_size * hyp['batch_size']
 
     box_weights = tf.get_variable('box_out',
-                                  shape=(hyp['num_inner_channel'], 4))
+                                  shape=(hyp['num_inner_channel'], 6))
     conf_weights = tf.get_variable('confs_out',
                                    shape=(hyp['num_inner_channel'],
                                           hyp['num_classes']))
 
     pred_boxes = tf.reshape(tf.matmul(hidden_output, box_weights) * 50,
-                            [outer_size, 1, 4])
+                            [outer_size, 1, 6])
 
     # hyp['rnn_len']
     pred_logits = tf.reshape(tf.matmul(hidden_output, conf_weights),
@@ -133,61 +133,61 @@ def _build_output_layer(hyp, hidden_output):
 
 
 def _build_rezoom_layer(hyp, rezoom_input, train):
-    with tf.name_scope('rezoom_layer'):
-        grid_size = hyp['grid_width'] * hyp['grid_height']
-        outer_size = grid_size * hyp['batch_size']
 
-        pred_boxes, pred_logits, pred_confidences, early_feat, \
-            hidden_output = rezoom_input
+    grid_size = hyp['grid_width'] * hyp['grid_height']
+    outer_size = grid_size * hyp['batch_size']
 
-        early_feat_channels = hyp['early_feat_channels']
-        early_feat = early_feat[:, :, :, :early_feat_channels]
+    pred_boxes, pred_logits, pred_confidences, early_feat, \
+        hidden_output = rezoom_input
 
-        w_offsets = hyp['rezoom_w_coords']
-        h_offsets = hyp['rezoom_h_coords']
-        num_offsets = len(w_offsets) * len(h_offsets)
-        rezoom_features = _rezoom(
-            hyp, pred_boxes, early_feat, early_feat_channels,
-            w_offsets, h_offsets)
-        if train:
-            rezoom_features = tf.nn.dropout(rezoom_features, 0.5)
+    early_feat_channels = hyp['early_feat_channels']
+    early_feat = early_feat[:, :, :, :early_feat_channels]
 
-        delta_features = tf.concat(
-            axis=1,
-            values=[hidden_output,
-                    rezoom_features[:, 0, :] / 1000.])
-        dim = 128
-        shape = [hyp['num_inner_channel'] +
-                 early_feat_channels * num_offsets,
-                 dim]
-        delta_weights1 = tf.get_variable('delta1',
-                                         shape=shape)
-        # TODO: maybe adding dropout here?
-        ip1 = tf.nn.relu(tf.matmul(delta_features, delta_weights1))
-        if train:
-            ip1 = tf.nn.dropout(ip1, 0.5)
-        delta_confs_weights = tf.get_variable(
-            'delta2', shape=[dim, hyp['num_classes']])
-        delta_boxes_weights = tf.get_variable('delta_boxes', shape=[dim, 4])
+    w_offsets = hyp['rezoom_w_coords']
+    h_offsets = hyp['rezoom_h_coords']
+    num_offsets = len(w_offsets) * len(h_offsets)
+    rezoom_features = _rezoom(
+        hyp, pred_boxes, early_feat, early_feat_channels,
+        w_offsets, h_offsets)
+    if train:
+        rezoom_features = tf.nn.dropout(rezoom_features, 0.5)
 
-        rere_feature = tf.matmul(ip1, delta_boxes_weights) * 5
-        pred_boxes_delta = (tf.reshape(rere_feature, [outer_size, 1, 4]))
+    delta_features = tf.concat(
+        axis=1,
+        values=[hidden_output,
+                rezoom_features[:, 0, :] / 1000.])
+    dim = 128
+    shape = [hyp['num_inner_channel'] +
+             early_feat_channels * num_offsets,
+             dim]
+    delta_weights1 = tf.get_variable('delta1',
+                                     shape=shape)
+    # TODO: maybe adding dropout here?
+    ip1 = tf.nn.relu(tf.matmul(delta_features, delta_weights1))
+    if train:
+        ip1 = tf.nn.dropout(ip1, 0.5)
+    delta_confs_weights = tf.get_variable(
+        'delta2', shape=[dim, hyp['num_classes']])
+    delta_boxes_weights = tf.get_variable('delta_boxes', shape=[dim, 6])
 
-        scale = hyp.get('rezoom_conf_scale', 50)
-        feature2 = tf.matmul(ip1, delta_confs_weights) * scale
-        pred_confs_delta = tf.reshape(feature2, [outer_size, 1,
-                                      hyp['num_classes']])
+    rere_feature = tf.matmul(ip1, delta_boxes_weights) * 5
+    pred_boxes_delta = (tf.reshape(rere_feature, [outer_size, 1, 6]))
 
-        pred_confs_delta = tf.reshape(pred_confs_delta,
-                                      [outer_size, hyp['num_classes']])
+    scale = hyp.get('rezoom_conf_scale', 50)
+    feature2 = tf.matmul(ip1, delta_confs_weights) * scale
+    pred_confs_delta = tf.reshape(feature2, [outer_size, 1,
+                                  hyp['num_classes']])
 
-        pred_confidences_squash = tf.nn.softmax(pred_confs_delta)
-        pred_confidences = tf.reshape(pred_confidences_squash,
-                                      [outer_size, hyp['rnn_len'],
-                                       hyp['num_classes']])
+    pred_confs_delta = tf.reshape(pred_confs_delta,
+                                  [outer_size, hyp['num_classes']])
 
-        return pred_boxes, pred_logits, pred_confidences, \
-            pred_confs_delta, pred_boxes_delta
+    pred_confidences_squash = tf.nn.softmax(pred_confs_delta)
+    pred_confidences = tf.reshape(pred_confidences_squash,
+                                  [outer_size, hyp['rnn_len'],
+                                   hyp['num_classes']])
+
+    return pred_boxes, pred_logits, pred_confidences, \
+        pred_confs_delta, pred_boxes_delta
 
 
 def decoder(hyp, logits, train):
@@ -216,16 +216,13 @@ def decoder(hyp, logits, train):
     initializer = tf.random_uniform_initializer(-0.1, 0.1)
 
     with tf.variable_scope('decoder', initializer=initializer):
-        with tf.name_scope('inner_layer'):
-            # Build inner layer.
-            # See https://arxiv.org/abs/1612.07695 fig. 2 for details
-            hidden_output = _build_inner_layer(hyp, encoded_features, train)
-
-        with tf.name_scope('output_layer'):
-            # Build output layer
-            # See https://arxiv.org/abs/1612.07695 fig. 2 for details
-            pred_boxes, pred_logits, pred_confidences = _build_output_layer(
-                hyp, hidden_output)
+        # Build inner layer.
+        # See https://arxiv.org/abs/1612.07695 fig. 2 for details
+        hidden_output = _build_inner_layer(hyp, encoded_features, train)
+        # Build output layer
+        # See https://arxiv.org/abs/1612.07695 fig. 2 for details
+        pred_boxes, pred_logits, pred_confidences = _build_output_layer(
+            hyp, hidden_output)
 
         # Dictionary filled with return values
         dlogits = {}
@@ -288,8 +285,8 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input):
             tf.logical_and(tf.less(square_error, 0.2**2),
                            tf.greater(classes, 0))), [-1])
     elif hypes['rezoom_change_loss'] == 'iou':
-        pred_boxes_flat = tf.reshape(pred_boxes, [-1, 4])
-        perm_truth_flat = tf.reshape(perm_truth, [-1, 4])
+        pred_boxes_flat = tf.reshape(pred_boxes, [-1, 6])
+        perm_truth_flat = tf.reshape(perm_truth, [-1, 6])
         iou = train_utils.iou(train_utils.to_x1y1x2y2(pred_boxes_flat),
                               train_utils.to_x1y1x2y2(perm_truth_flat))
         inside = tf.reshape(tf.to_int64(tf.greater(iou, 0.5)), [-1])
@@ -306,7 +303,7 @@ def _compute_rezoom_loss(hypes, rezoom_loss_input):
     delta_unshaped = perm_truth - (pred_boxes + pred_boxes_deltas)
 
     delta_residual = tf.reshape(delta_unshaped * pred_mask,
-                                [outer_size, hypes['rnn_len'], 4])
+                                [outer_size, hypes['rnn_len'], 6])
     sqrt_delta = tf.minimum(tf.square(delta_residual), 10. ** 2)
     delta_boxes_loss = (tf.reduce_sum(sqrt_delta) /
                         outer_size * head[1] * 0.03)
@@ -358,7 +355,7 @@ def loss(hypes, decoded_logits, labels):
     cross_entropy_sum = (tf.reduce_sum(mask_r*cross_entropy))
     confidences_loss = cross_entropy_sum / outer_size * head[0]
 
-    true_boxes = tf.reshape(boxes, (outer_size, hypes['rnn_len'], 4))
+    true_boxes = tf.reshape(boxes, (outer_size, hypes['rnn_len'], 6))
 
     # box loss for background prediction needs to be zerod out
     boxes_mask = tf.reshape(
@@ -444,7 +441,7 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
     # show predictions to visualize training progress
     pred_boxes_r = tf.reshape(
         pred_boxes, [hyp['batch_size'], grid_size, hyp['rnn_len'],
-                     4])
+                     6])
     test_pred_confidences = pred_confidences_r[0, :, :, :]
     test_pred_boxes = pred_boxes_r[0, :, :, :]
 
@@ -469,7 +466,7 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
 
         scp.misc.imsave(img_path, plot_image)
         return plot_image
-
+    '''
     pred_log_img = tf.py_func(log_image,
                               [images, test_pred_confidences,
                                test_pred_boxes, global_step, 'pred'],
@@ -480,5 +477,5 @@ def evaluation(hyp, images, labels, decoded_logits, losses, global_step):
                                mask, global_step, 'true'],
                               [tf.uint8])
     tf.summary.image('/pred_boxes', tf.stack(pred_log_img))
-    tf.summary.image('/true_boxes', tf.stack(true_log_img))
+    tf.summary.image('/true_boxes', tf.stack(true_log_img))'''
     return eval_list

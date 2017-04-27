@@ -43,17 +43,18 @@ def make_img_dir(hypes):
     return val_dir
 
 
-def write_rects(rects, filename):
+def write_boxes(boxes, filename):
     with open(filename, 'w') as f:
         for rect in rects:
-            string = "Car 0 1 0 %f %f %f %f 0 0 0 0 0 0 0 %f" % \
-                (rect.x1, rect.y1, rect.x2, rect.y2, rect.score)
+            string = "Car 0 1 0 0 0 0 0 %f %f %f %f %f %f 0 %f" % \
+                        ((rect.x2-rect.x1), (rect.y2-rect.y1), (rect.z2-rect.z1),
+                        (rect.x1+rect.x2)/2, (rect.y1+rect.y2)/2, (rect.z1+rect.z2)/2
+                        , rect.score)
             print(string, file=f)
 
 
 def evaluate(hypes, sess, image_pl, softmax):
-    pred_annolist, image_list, dt, dt2 = get_results(
-        hypes, sess, image_pl, softmax, True)
+    pred_annolist = get_results(hypes, sess, image_pl, softmax, True)
 
     val_path = make_val_dir(hypes)
 
@@ -144,6 +145,7 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
         if not validation and random.random() > 0.2:
             continue
         image_file = os.path.join(base_path, image_file)
+        print(image_file)
         orig_img = scp.misc.imread(image_file)[:, :, :3]
         img = scp.misc.imresize(orig_img, (hypes["image_height"],
                                            hypes["image_width"]),
@@ -154,8 +156,8 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
                                                         feed_dict=feed)
         pred_anno = AnnLib.Annotation()
         pred_anno.imageName = image_file
-        new_img, rects = utils.train_utils.add_rectangles(
-            hypes, [img], np_pred_confidences,
+        boxes = utils.train_utils.compute_boxes(
+            hypes, np_pred_confidences,
             np_pred_boxes, show_removed=False,
             use_stitching=True, rnn_len=hypes['rnn_len'],
             min_conf=0.50, tau=hypes['tau'], color_acc=(0, 255, 0))
@@ -175,31 +177,10 @@ def get_results(hypes, sess, image_pl, decoded_logits, validation=True):
 
         # write rects to file
 
-        pred_anno.rects = rects
-        pred_anno = utils.train_utils.rescale_boxes((
-            hypes["image_height"],
-            hypes["image_width"]),
-            pred_anno, orig_img.shape[0],
-            orig_img.shape[1])
+        pred_anno.boxes = boxes
 
-        write_rects(rects, val_file)
+        #write_boxes(boxes, val_file)
 
         pred_annolist.append(pred_anno)
 
-    start_time = time.time()
-    for i in xrange(100):
-        (np_pred_boxes, np_pred_confidences) = sess.run([pred_boxes,
-                                                         pred_confidences],
-                                                        feed_dict=feed)
-    dt = (time.time() - start_time)/100
-
-    start_time = time.time()
-    for i in xrange(100):
-        utils.train_utils.compute_rectangels(
-            hypes, np_pred_confidences,
-            np_pred_boxes, show_removed=False,
-            use_stitching=True, rnn_len=hypes['rnn_len'],
-            min_conf=0.001, tau=hypes['tau'])
-    dt2 = (time.time() - start_time)/100
-
-    return pred_annolist, image_list, dt, dt2
+    return pred_annolist

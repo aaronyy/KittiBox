@@ -44,13 +44,16 @@ def annotation_to_h5(H, a, cell_width, cell_height, max_len):
         unsorted_boxes = []
         for bidx in xrange(min(len(box_list[cidx]), max_len)):
             # relative box position with respect to cell
-            ox, oy, ox = box_list[cidx][bidx].x, box_list[cidx][bidx].y, box_list[cidx][bidx].z
+            ox, oy, oz = box_list[cidx][bidx].x, box_list[cidx][bidx].y, box_list[cidx][bidx].z
             width, height, depth = box_list[cidx][bidx].w, box_list[cidx][bidx].h, box_list[cidx][bidx].d 
+
+        #if (abs(ox) < H['focus_size'] * region_size and abs(oy) < H['focus_size'] * region_size and
+        #                 width < H['biggest_box_px'] and height < H['biggest_box_px']):
+            unsorted_boxes.append(np.array([ox, oy, oz, width, height, depth], dtype=np.float))
 
         for bidx, box in enumerate(sorted(unsorted_boxes, key=lambda x: x[0]**2 + x[1]**2)):
             boxes[0, cidx, :, bidx, 0] = box
             box_flags[0, cidx, 0, bidx, 0] = max(box_list[cidx][bidx].silhouetteID, 1)
-
     return boxes, box_flags
 
 def init_dim_grid(cell_width, cell_height, pos_ranges, dim_ranges):

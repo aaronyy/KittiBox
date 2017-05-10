@@ -118,7 +118,6 @@ def _build_output_layer(hyp, hidden_output):
     pred_boxes = tf.reshape(tf.matmul(hidden_output, box_weights) * 50,
                             [outer_size, 1, 6])
 
-    # hyp['rnn_len']
     pred_logits = tf.reshape(tf.matmul(hidden_output, conf_weights),
                              [outer_size, 1, hyp['num_classes']])
 

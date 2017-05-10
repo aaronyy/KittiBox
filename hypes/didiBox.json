@@ -34,7 +34,7 @@
         "hungarian_iou": 0.35,
         "weights": "",
         "head_weights": [1.0, 0.1],
-        "max_steps": 1400
+        "max_steps": 100000
     },
     "use_rezoom": false,
     "augment_level": 1,
